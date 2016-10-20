@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">CharPathRecog</string>
+    <string name="train">Train</string>
+    <string name="reset">Reset</string>
+    <string name="sample_counter">%d samples</string>
+    <string name="recognize">Recognize</string>
+    <string name="save">Save</string>
+</resources>
