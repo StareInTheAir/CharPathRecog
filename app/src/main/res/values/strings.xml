@@ -5,4 +5,6 @@
     <string name="sample_counter">%d samples</string>
     <string name="recognize">Recognize</string>
     <string name="save">Save</string>
+    <string name="load">Load</string>
+    <string name="choose_one_file">Choose one file:</string>
 </resources>

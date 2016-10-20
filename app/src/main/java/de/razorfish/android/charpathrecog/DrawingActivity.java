@@ -2,6 +2,8 @@ package de.razorfish.android.charpathrecog;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.PointF;
@@ -9,16 +11,16 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
 import android.view.View;
+import android.widget.ArrayAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -36,10 +38,10 @@ public class DrawingActivity extends Activity {
     private int sampleCount;
     private TextView textViewCharIndicator;
     private TextView textViewSampleCount;
-    private List<List<List<PointF>>> pathss;
-    private List<double[]> samples;
-    private List<Character> klasses;
-    private String jsonToWrite;
+    private static File SD_CARD_DIR = new File(Environment.getExternalStorageDirectory()
+            .getAbsolutePath() + File.separator + "CharPaths");
+    List<PathsSample> pathsSamples;
+    private Gson gson;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,12 +54,13 @@ public class DrawingActivity extends Activity {
         currentChar = 'A';
         sampleCount = 0;
 
-        pathss = new ArrayList<>();
-        samples = new ArrayList<>();
-        klasses = new ArrayList<>();
+        pathsSamples = new ArrayList<>();
 
         updateTextFields();
         checkPermissions();
+
+        SD_CARD_DIR.mkdirs();
+        gson = new Gson();
     }
 
     private void checkPermissions() {
@@ -86,14 +89,7 @@ public class DrawingActivity extends Activity {
     public void onButtonNextClick(View view) {
         List<List<PointF>> paths = drawingView.getPaths();
 
-//        double[] sample = CharacterPathTransformator.pathsToBestVectorAngleHistogram(paths);
-        double[] sample = CharacterPathTransformator.pathsToVectorAngleTemporalDivs(paths, 4,
-                true, false);
-        Log.d(TAG, Arrays.toString(sample));
-
-        pathss.add(paths);
-        samples.add(sample);
-        klasses.add(currentChar);
+        pathsSamples.add(new PathsSample(paths, currentChar));
 
         sampleCount += 1;
         currentChar += 1;
@@ -111,22 +107,15 @@ public class DrawingActivity extends Activity {
     }
 
     public void onButtonTrainClick(View view) {
-        CharacterClassifier characterClassifier = CharacterClassifier.get();
-        double[][] primitiveSamples = new double[samples.size()][];
-        for (int i = 0; i < samples.size(); i++) {
-            primitiveSamples[i] = samples.get(i);
-        }
-
-        char[] primitiveKlasses = new char[klasses.size()];
-        for (int i = 0; i < klasses.size(); i++) {
-            primitiveKlasses[i] = klasses.get(i);
-        }
-
         writePathssToStorage();
+        trainClassifierAndGotoRecognition();
+    }
 
+    private void trainClassifierAndGotoRecognition() {
         try {
-            characterClassifier.train(primitiveSamples, primitiveKlasses);
-            startActivity(new Intent(this, RecognitionActivity.class));
+            CharacterClassifier characterClassifier = CharacterClassifier.get();
+            characterClassifier.train(getPrimitiveFeatures(), getPrimitiveKlasses());
+            startActivity(new Intent(DrawingActivity.this, RecognitionActivity.class));
         } catch (Exception e) {
             Log.e(TAG, "Exception while training classifier", e);
         }
@@ -139,28 +128,15 @@ public class DrawingActivity extends Activity {
             return;
         }
         try {
-            File sdCard = Environment.getExternalStorageDirectory();
-            File dir = new File(sdCard.getAbsolutePath() + File.separator + "CharPaths");
-            dir.mkdirs();
             SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH-mm-ss.SSS ", Locale
                     .ENGLISH);
             Date now = new Date();
-            File outputFile = new File(dir, format.format(now) + pathss.size() + " samples.json");
 
-            Gson gson = new Gson();
-            JsonArray rawDataSet = new JsonArray();
-            for (int i = 0; i < pathss.size(); i++) {
-                JsonObject sample = new JsonObject();
-
-                sample.add("class", new JsonPrimitive(klasses.get(i)));
-                List<List<PointF>> paths = pathss.get(i);
-                sample.add("paths", gson.toJsonTree(paths));
-
-                rawDataSet.add(sample);
-            }
+            File outputFile = new File(SD_CARD_DIR, format.format(now) + getKlasses().size() + " " +
+                    "samples.json");
 
             FileOutputStream fos = new FileOutputStream(outputFile);
-            fos.write(gson.toJson(rawDataSet).getBytes());
+            fos.write(gson.toJson(pathsSamples).getBytes());
 
         } catch (IOException e) {
             Log.e(TAG, "Exception while writing Json to internal storage", e);
@@ -170,4 +146,80 @@ public class DrawingActivity extends Activity {
     public void onButtonResetClick(View view) {
         drawingView.clearPaths();
     }
+
+    public void onButtonLoadClick(View view) {
+        String[] files = SD_CARD_DIR.list();
+
+        AlertDialog.Builder dialogBuilder = new AlertDialog.Builder(this);
+        dialogBuilder.setTitle(R.string.choose_one_file);
+
+        final ArrayAdapter<String> arrayAdapter = new ArrayAdapter<>(this, android.R.layout
+                .select_dialog_singlechoice, files);
+
+        dialogBuilder.setNegativeButton(android.R.string.cancel, new DialogInterface
+                .OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.dismiss();
+            }
+        });
+
+        dialogBuilder.setAdapter(arrayAdapter, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String chosenFile = arrayAdapter.getItem(which);
+                try {
+                    PathsSample[] pathsSamples = gson.fromJson(new FileReader(new File
+                                    (SD_CARD_DIR, chosenFile)),
+                            PathsSample[].class);
+                    DrawingActivity.this.pathsSamples = Arrays.asList(pathsSamples);
+                    trainClassifierAndGotoRecognition();
+
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                }
+            }
+        });
+        dialogBuilder.show();
+    }
+
+    public List<Character> getKlasses() {
+        List<Character> characters = new ArrayList<>();
+        for (PathsSample sample : pathsSamples) {
+            characters.add(sample.klass);
+        }
+        return characters;
+    }
+
+    public List<List<List<PointF>>> getPathss() {
+        List<List<List<PointF>>> pathss = new ArrayList<>();
+        for (PathsSample sample : pathsSamples) {
+            pathss.add(sample.paths);
+        }
+        return pathss;
+    }
+
+    public char[] getPrimitiveKlasses() {
+        List<Character> klasses = getKlasses();
+        char[] primitiveKlasses = new char[klasses.size()];
+        for (int i = 0; i < klasses.size(); i++) {
+            primitiveKlasses[i] = klasses.get(i);
+        }
+        return primitiveKlasses;
+    }
+
+    public double[][] getPrimitiveFeatures() {
+        List<List<List<PointF>>> samples = getPathss();
+        double[][] primitiveFeatures = new double[samples.size()][];
+        for (int i = 0; i < samples.size(); i++) {
+
+            primitiveFeatures[i] = CharacterPathTransformator.pathsToVectorAngleTemporalDivs
+                    (samples.get(i), 4, true, false);
+//            primitiveFeatures[i] = CharacterPathTransformator.pathsToBestVectorAngleHistogram
+//                    (samples.get(i));
+        }
+        System.out.println(Arrays.deepToString(primitiveFeatures));
+        return primitiveFeatures;
+    }
+
 }
