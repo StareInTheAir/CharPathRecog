@@ -92,21 +92,23 @@ public class CharacterPathTransformator {
             }
         }
 
-        int minElementsPerDivision = angles.size() / divisions;
+        int elementsPerDivision = Math.round(angles.size() / (float) divisions);
         List<List<Double>> temporalMeans = new ArrayList<>();
         for (int i = 0; i < divisions - 1; i++) {
-            temporalMeans.add(angles.subList(i * minElementsPerDivision, (i + 1) *
-                    minElementsPerDivision));
+            temporalMeans.add(angles.subList(i * elementsPerDivision, (i + 1) *
+                    elementsPerDivision));
         }
 
         // add the last division by hand, so that all remaining values are part of this division
-        temporalMeans.add(angles.subList((divisions - 1) * minElementsPerDivision, angles.size()));
+        temporalMeans.add(angles.subList((divisions - 1) * elementsPerDivision, angles.size()));
 
-        double[] means = new double[divisions + 1];
-        means[0] = getMean(angles);
+        double[] means = new double[divisions + 2];
+
         for (int i = 0; i < temporalMeans.size(); i++) {
-            means[i + 1] = getMean(temporalMeans.get(i));
+            means[i] = getMean(temporalMeans.get(i));
         }
+        means[means.length - 2] = getMean(angles);
+        means[means.length - 1] = paths.size();
 
         return means;
     }
