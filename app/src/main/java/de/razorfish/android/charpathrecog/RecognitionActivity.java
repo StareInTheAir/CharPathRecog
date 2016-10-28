@@ -28,7 +28,9 @@ public class RecognitionActivity extends Activity {
 
     public void onButtonRecognizeClick(View view) {
         List<List<PointF>> paths = drawingView.getPaths();
-        double[] sample = CharacterPathTransformator.pathsToBestVectorAngleHistogram(paths);
+//        double[] sample = CharacterPathTransformator.pathsToBestVectorAngleHistogram(paths);
+        double[] sample = CharacterPathTransformator.pathsToVectorAngleTemporalDivs(paths, 4,
+                true, false);
         try {
             char klass = characterClassifier.classify(sample);
             Log.d(TAG, "Predicted class: " + klass);
